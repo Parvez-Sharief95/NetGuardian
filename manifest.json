@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "NETGUARDIAN — Safe Browsing Extension (MVP)",
+  "short_name": "NETGUARDIAN",
+  "version": "0.1.0",
+  "description": "Blur/flag explicit images and harmful text. Privacy-first: basic checks on-device.",
+  "icons": {
+    "48": "icons/icon48.png"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/icon48.png"
+  },
+  "options_page": "options/options.html",
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
