@@ -1,47 +1,42 @@
 // content/nsfw-worker.js
-self.importScripts('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.8.0/dist/tf.min.js');
-// NOTE: For prototype, we attempt to load a lightweight model. Replace with your own hosted TF model or nsfwjs.
+self.importScripts('libs/tf.min.js', 'libs/nsfwjs.min.js');
+
 let model = null;
 async function loadModel() {
   if (model) return model;
   try {
-    // Example: you'd host a tiny model or use nsfwjs. This is a placeholder path.
-    // model = await tf.loadGraphModel(chrome.runtime.getURL('models/tfjs_model/model.json'));
-    // For now, model stays null and we'll use a simple skin-tone / brightness heuristic as fallback.
-  } catch (e) {
-    // fallback
+    model = await nsfwjs.load(); // default local hosted model
+    console.log('[NG-worker] model loaded');
+  } catch (err) {
+    console.error('[NG-worker] model load failed', err);
   }
   return model;
 }
 
 self.onmessage = async (e) => {
-  const { image, threshold = 0.7, role } = e.data;
-  await loadModel();
-
+  console.log('[NG-worker] received message', e.data);
+  const { image, threshold = 0.7 } = e.data;
   try {
-    // Fallback heuristic: compute average brightness & saturation to catch very dark/light suspicious images
+    const mdl = await loadModel();
+    if (!mdl) {
+      self.postMessage({ unsafe: false, score: 0, error: 'model-not-loaded' });
+      return;
+    }
+
     const res = await fetch(image);
     const blob = await res.blob();
     const bitmap = await createImageBitmap(blob);
-    const off = new OffscreenCanvas(64, 64);
-    const ctx = off.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, 64, 64);
-    const imgdata = ctx.getImageData(0, 0, 64, 64);
-    let r=0,g=0,b=0;
-    for(let i=0;i<imgdata.data.length;i+=4){
-      r += imgdata.data[i];
-      g += imgdata.data[i+1];
-      b += imgdata.data[i+2];
-    }
-    const px = imgdata.data.length / 4;
-    const avg = (r+g+b) / (3*px) / 255; // 0..1
-    // Simple scoring: darker or high-contrast images get slightly higher score
-    let score = 1 - avg; // dark -> higher
-    score = Math.min(Math.max(score, 0), 1);
-    const unsafe = score >= threshold; // very naive fallback
+    const predictions = await mdl.classify(bitmap);
 
-    self.postMessage({ unsafe, score });
+    let unsafe = false, maxProb = 0, maxClass = null;
+    for (const p of predictions) {
+      if (p.probability > maxProb) { maxProb = p.probability; maxClass = p.className; }
+      if ((p.className === "Porn" || p.className === "Hentai" || p.className === "Sexy") && p.probability >= threshold) unsafe = true;
+    }
+    console.log('[NG-worker] predictions', predictions);
+    self.postMessage({ unsafe, score: maxProb, label: maxClass, predictions });
   } catch (err) {
-    self.postMessage({ unsafe: false, score: 0 });
+    console.error('[NG-worker] error classifying', err);
+    self.postMessage({ unsafe: false, score: 0, error: String(err) });
   }
 };

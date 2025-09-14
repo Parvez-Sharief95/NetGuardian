@@ -7,6 +7,16 @@
   "icons": {
     "48": "icons/icon48.png"
   },
+  "web_accessible_resources": [
+  {
+    "resources": [
+      "content/nsfw-worker.js",
+      "content/libs/tf.min.js",
+      "content/libs/nsfwjs.min.js"
+    ],
+    "matches": ["<all_urls>"]
+  }
+],
   "permissions": [
     "storage",
     "scripting",
