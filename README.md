@@ -57,7 +57,6 @@
 ---
 
 <p align="center">
-    <img src="https://img.icons8.com/color/48/000000/guardian-shield.png" alt="Guardian Shield"/>
     <br>
     <b>Stay safe, browse smart — with NetGuardian!</b>
 </p>
