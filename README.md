@@ -336,6 +336,6 @@ Distributed under the **MIT License**. See `LICENSE` for more information.
 ---
 
 <p align="center">
-  <sub>Built with 💙 by <a href="https://github.com/dandetejaswini">dandetejaswini</a> and contributors</sub><br/>
+  <sub>Built with 💙 by <a href="https://github.com/Parvez-Sharief95">ParvezSharief</a> and contributors</sub><br/>
   <sub>⭐ Star this repo if NetGuardian made the web a little safer for someone you love.</sub>
 </p>
