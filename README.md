@@ -1,341 +1,157 @@
-<!-- NETGUARDIAN README — Rewritten with clarity, creativity, and depth -->
+# NetGuardian — Safe Browsing Extension
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/dandetejaswini/Net-Gaurdian/main/client-extension/public/icons/icon128.png" alt="NetGuardian Logo" width="100"/>
-</p>
+Blurs explicit images and flags harmful text in real time, entirely on-device.
+Manifest V3, no build step, no external servers.
 
-<h1 align="center">
-  🛡️ N E T G U A R D I A N
-</h1>
-
-<p align="center">
-  <em>Your browser. Your rules. Your shield.</em>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue?style=flat-square"/>
-  <img src="https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript"/>
-  <img src="https://img.shields.io/badge/backend-FastAPI-009688?style=flat-square&logo=fastapi"/>
-  <img src="https://img.shields.io/badge/AI-TensorFlow.js-FF6F00?style=flat-square&logo=tensorflow"/>
-  <img src="https://img.shields.io/badge/dashboard-React%20+%20Vite-61DAFB?style=flat-square&logo=react"/>
-  <img src="https://img.shields.io/badge/container-Docker-2496ED?style=flat-square&logo=docker"/>
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square"/>
-</p>
-
-<!-- <p align="center">
-  <a href="https://drive.google.com/file/d/1W-HeGaQFtOIbDmhmRwIAaKdflTTK4NNJ/view?usp=sharing" target="_blank">
-    <img src="https://img.shields.io/badge/▶%20Watch%20Demo-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch Demo"/>
-  </a>
-</p> -->
-
----
-
-## 🌐 The Story
-
-> Imagine handing your child a smartphone connected to the entire internet — unfiltered, raw, and unpredictable.
-
-**NetGuardian** was born from a simple but powerful idea: *what if your browser could think for itself?*
-
-It's not just an extension. It's a **three-layer digital immune system** — a Chrome extension that silently watches every image, video, and iframe as you browse; a FastAPI backend that classifies content, detects deepfakes, and generates AI-powered insights; and a React dashboard that gives parents full visibility and control over what their children see online.
-
----
-
-## 🏗️ Architecture at a Glance
+## Project structure
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        NETGUARDIAN ECOSYSTEM                    │
-│                                                                 │
-│  ┌──────────────────┐      ┌──────────────────┐                 │
-│  │  Chrome Extension │      │  Parent Dashboard │                │
-│  │  (TypeScript)     │      │  (React + Vite)   │                │
-│  │                  │      │                  │                 │
-│  │  • background.ts  │      │  • Dashboard Page │                │
-│  │  • content/scan   │      │  • Reports Page   │                │
-│  │  • popup UI       │◄────►│  • Settings Page  │                │
-│  │  • TF.js NSFW     │      │  • Admin Panel    │                │
-│  │  • MutationObsvr  │      │  • Chart.js viz   │                │
-│  └────────┬─────────┘      └────────┬─────────┘                │
-│           │                         │                           │
-│           └──────────┬──────────────┘                           │
-│                      ▼                                           │
-│           ┌──────────────────┐                                   │
-│           │   FastAPI Server  │  (Python 3.12 · Docker)          │
-│           │                  │                                   │
-│           │  /classify       │ ← Text safety scoring             │
-│           │  /deepfake/check │ ← Image deepfake detection        │
-│           │  /reports        │ ← Activity log (SQLAlchemy)       │
-│           │  /ai/summary     │ ← OpenAI GPT-3.5 insights         │
-│           │  /admin/users    │ ← User management (JWT auth)      │
-│           │                  │                                   │
-│           │  SQLite / PG DB  │                                   │
-│           └──────────────────┘                                   │
-└─────────────────────────────────────────────────────────────────┘
+netguardian-extension/
+├── manifest.json
+├── background/
+│   └── service-worker.js      # settings init + offscreen-document lifecycle/relay
+├── offscreen/
+│   ├── offscreen.html         # hidden extension page immune to any web page's CSP
+│   └── offscreen.js           # fetches image bytes + runs the nsfwjs model
+├── content/
+│   ├── content.js             # scans the page, manages the classification queue
+│   ├── libs/
+│   │   ├── nsfwjs.min.js      # official self-contained UMD build (the inference engine)
+│   │   └── nsfwjs.LICENSE.txt
+│   └── model/
+│       ├── model.json         # trained MobileNetV2 model topology (bundled, not fetched)
+│       └── group1-shard1of1.bin  # trained weights (~2.6MB)
+├── popup/
+│   ├── popup.html
+│   ├── popup.css
+│   └── popup.js
+├── options/
+│   ├── options.html
+│   ├── options.css
+│   └── options.js
+└── icons/
+    ├── icon16.png
+    ├── icon48.png
+    └── icon128.png
 ```
 
----
+There is no `src/` vs `public/` split and no bundler — every file here is loaded by
+Chrome exactly as written, so what you edit is what runs.
 
-## ✨ Features That Actually Matter
+## How it works
 
-### 🔴 For Children — Zero Tolerance Mode
-| What happens | How it works |
-|---|---|
-| Inappropriate images vanish | `src` is cleared, `srcset` stripped — element gone |
-| Videos are blocked at the protocol level | `HTMLMediaElement.prototype.play` is overridden globally |
-| Suspicious iframes are removed from the DOM | Pattern-matched against known NSFW domains |
-| NSFW score threshold: **40%** | Lower bar = higher protection |
+1. `content.js` finds `<img>` elements at least 80×80px and sends their URL to the
+   background service worker — it does **not** fetch bytes or spawn a worker itself.
+2. The background worker lazily creates a hidden **offscreen document** (a
+   Chrome-MV3 API for running extension-owned pages with no visible UI) and relays
+   the request to it.
+3. `offscreen.js` fetches the image directly. Because it runs as an extension page
+   with `host_permissions`, this fetch is not subject to the origin site's CORS
+   policy — which is what lets images from third-party CDNs be scanned at all.
+4. `offscreen.js` also loads `nsfwjs`, pointed at the **bundled** `content/model/model.json`
+   (not the network) — see "Model weights" below for why that distinction matters.
+   Running this in the offscreen document — rather than a Worker created by the content
+   script — matters: content scripts inherit the **host page's** CSP for things like
+   `Worker()`, and sites like Google Search set a `worker-src` policy that silently
+   blocks `chrome-extension://` workers. Offscreen documents are governed by the
+   extension's own CSP instead, so this works on every site.
+5. The background worker relays the `{unsafe, score, label}` result back to
+   `content.js`, which applies `filter: blur(...)` to images above the active
+   threshold. Threshold defaults to a per-role value (Minor/Parent/Adult) set in the
+   popup, and can be fine-tuned on the Settings (options) page.
+6. A lightweight, separate regex pass flags a small set of explicit terms in visible
+   text (paragraphs, list items, headings) — independent of the image pipeline.
+7. The offscreen document (and the loaded model) is automatically closed after 2
+   minutes of no classification activity, via `chrome.alarms`, to free memory.
 
-### 🟡 For Adults — Smart Blur Mode
-| What happens | How it works |
-|---|---|
-| Sensitive images get blurred instantly | `filter: blur(18px)` with smooth CSS transition |
-| Videos get a blurred overlay | Non-destructive — content preserved |
-| Iframes get a warning overlay | URL pattern matched against 8 risky keywords |
-| NSFW score threshold: **85%** | Higher bar = less false positives |
+## Model weights
 
-### 🧠 AI Engine
-- **TensorFlow.js** runs the NSFW detection model *in-browser* — no image data leaves your machine
-- **OpenAI GPT-3.5** generates human-readable summaries and AI insights via the backend
-- **Deepfake Detection** endpoint ready for integration with real ML models
+`nsfwjs.min.js` (the UMD build) bundles the *inference engine* — but **not** the
+trained model weights. Calling `nsfwjs.load()` with no argument makes it fetch
+those weights (a `model.json` + a binary shard) from a remote URL at runtime. That
+was actually the root cause of a "Could not load the model..." error hit during
+testing — a genuinely on-device, privacy-first extension shouldn't be doing that
+fetch at all, network hiccups aside.
 
-### 📊 Parent Dashboard
-- Real-time activity reports with Chart.js visualizations
-- Total flagged content counts, unsafe action history
-- AI-generated insights summarizing browsing patterns
-- Role-switching between Parent and Child mode — live, from the popup
+`content/model/model.json` and `content/model/group1-shard1of1.bin` are the actual
+trained MobileNetV2 weights (sourced from the nsfwjs project's own repository,
+same model the hosted demo uses), bundled directly into the extension. `offscreen.js`
+passes their local `chrome-extension://` URL to `nsfwjs.load(...)` explicitly, so
+model loading never touches the network — only per-image fetches (of the page's own
+images, to classify them) do.
 
----
+## A note on `data:` URLs and lazy-loaded thumbnails
 
-## 🗂️ Project Structure
+Many sites (Google Images included) render each image as a small base64 `data:`
+placeholder first, then swap in the real URL via JS once it's ready. Two things
+handle this:
 
-```
-Net-Guardian/
-│
-├── 📁 client-extension/          # Chrome Extension (TypeScript + Webpack)
-│   ├── src/
-│   │   ├── background/           # Service worker — role toggling via chrome.storage
-│   │   ├── content/
-│   │   │   ├── scan.ts           # 🔥 Core scanning engine (MutationObserver + TF.js)
-│   │   │   └── uiOverlay.tsx     # Overlay UI injected into web pages
-│   │   ├── popup/                # Extension popup (React)
-│   │   ├── options/              # Extension options page
-│   │   ├── models/               # TensorFlow.js NSFW model stub
-│   │   └── utils/                # chrome.storage helpers
-│   └── webpack.config.js
-│
-├── 📁 dashboard/                 # Parent Dashboard (React + Vite + Tailwind)
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── dashboard.tsx     # Summary cards — Reports, Unsafe Actions, AI Insights
-│   │   │   ├── reports.tsx       # Tabular activity log
-│   │   │   ├── settings.tsx      # AI key config + notification prefs
-│   │   │   └── admin.tsx         # User management panel
-│   │   ├── components/
-│   │   │   ├── Sidebar.tsx       # Navigation sidebar
-│   │   │   ├── ActivityChart.tsx # Chart.js powered visualizations
-│   │   │   ├── ReportsTable.tsx  # Filterable reports grid
-│   │   │   └── SummaryCard.tsx   # KPI metric cards
-│   │   └── hooks/useFetch.ts     # Generic data-fetching hook
-│   └── vite.config.ts
-│
-└── 📁 server/                    # FastAPI Backend (Python 3.12 · Docker)
-    ├── app/
-    │   ├── main.py               # App factory, CORS, router registration
-    │   ├── auth.py               # JWT (HS256) + bcrypt password hashing
-    │   ├── db.py                 # SQLAlchemy ORM — SQLite default, PG-ready
-    │   ├── models/               # User & Activity ORM models
-    │   └── api/
-    │       ├── classify.py       # POST /classify — text safety label
-    │       ├── deepfake.py       # POST /deepfake/check — file upload check
-    │       ├── reports.py        # GET  /reports — paginated activity log
-    │       ├── openai_summary.py # POST /ai/summary — GPT-3.5 insights
-    │       └── admin.py          # GET  /admin/users — admin user list
-    ├── Dockerfile                # Python 3.12-slim, port 8000
-    └── requirements.txt
-```
+- The base64 payload is itself image data with no network dependency, so
+  `offscreen.js` classifies `data:` URLs directly (no fetch involved) instead of
+  skipping them — otherwise a page could dodge detection just by inlining images.
+- When the placeholder gets swapped for a real URL, that's an attribute mutation
+  on the same `<img>` element, not a new element — `content.js` specifically
+  watches `src`/`srcset` attribute changes (not just newly added nodes) and clears
+  the "already scanned" flag so the swapped-in image gets (re)classified.
 
----
+## Local development / testing
 
-## 🚀 Getting Started
+1. Open `chrome://extensions`.
+2. Enable **Developer mode** (top right).
+3. Click **Load unpacked** and select the `netguardian-extension/` folder (the one
+   containing `manifest.json`).
+4. Visit any page with images. Open the extension's service worker console from
+   `chrome://extensions` → **service worker** link, and the page's own DevTools
+   console, to watch for `[NetGuardian]` log lines if something looks off.
+5. After editing any file, click the refresh icon on the extension card in
+   `chrome://extensions` to reload it. If you changed `content/content.js` you also
+   need to reload the tab you're testing on.
+6. Toggle protection and change role/threshold from the toolbar popup and the
+   Settings page and confirm images blur/unblur accordingly.
 
-### Prerequisites
+## Packaging for distribution / Chrome Web Store
 
-| Tool | Version | Why |
-|---|---|---|
-| Node.js | v16+ | Extension & Dashboard builds |
-| Python | 3.10+ | FastAPI backend |
-| Google Chrome | Latest | Extension host |
-| Docker *(optional)* | Any | Containerized server |
-
----
-
-### ⚡ Option A — Run Everything Locally
-
-#### 1. Clone the repo
-```bash
-git clone https://github.com/dandetejaswini/Net-Gaurdian.git
-cd Net-Gaurdian
-```
-
-#### 2. Build & load the Chrome Extension
-```bash
-cd client-extension
-npm install
-npm run build
-```
-Then in Chrome:
-1. Open `chrome://extensions`
-2. Enable **Developer Mode** (top-right toggle)
-3. Click **Load unpacked** → select `client-extension/dist/`
-4. Done. The guardian is active. 🛡️
-
-#### 3. Start the Backend Server
-```bash
-cd ../server
-
-# Create your environment file
-cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY and SECRET_KEY
-
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-API docs available at: `http://localhost:8000/docs`
-
-#### 4. Launch the Parent Dashboard
-```bash
-cd ../dashboard
-npm install
-npm run dev
-```
-Dashboard available at: `http://localhost:5173`
-
----
-
-### 🐳 Option B — Docker (Server Only)
+From inside the `netguardian-extension/` folder (the manifest's parent directory):
 
 ```bash
-cd server
-docker build -t netguardian-server .
-docker run -p 8000:8000 \
-  -e OPENAI_API_KEY=your_key_here \
-  -e SECRET_KEY=your_secret_here \
-  netguardian-server
+# macOS / Linux
+zip -r ../netguardian-extension.zip . -x ".*"
+
+# or, to be explicit about what's included:
+zip -r ../netguardian-extension.zip \
+  manifest.json background content popup options icons
 ```
 
----
+Then either:
 
-## ⚙️ Environment Variables
+- **Chrome Web Store**: upload `netguardian-extension.zip` directly in the
+  [Developer Dashboard](https://chrome.google.com/webstore/devconsole).
+- **Manual/enterprise distribution**: use `chrome://extensions` → **Pack extension**
+  and point it at the unpacked folder to produce a signed `.crx` + `.pem`.
 
-Create `server/.env` from `.env.example`:
+Before uploading, bump `"version"` in `manifest.json` — the Web Store rejects
+re-uploads that reuse a version number already published.
 
-```env
-DATABASE_URL=sqlite:///./test.db     # Or your PostgreSQL URL
-SECRET_KEY=your_super_secret_key     # JWT signing secret
-OPENAI_API_KEY=sk-...                # Your OpenAI API key
-```
+## Debugging tips
 
----
+- The offscreen document has its own DevTools console: `chrome://extensions` →
+  your extension card → **Inspect views: offscreen.html** (only appears while a
+  classification is in flight or within the 2-minute idle window — trigger a scan
+  first if you don't see it).
+- The background service worker's console is at `chrome://extensions` → **service
+  worker** link.
+- If images stop blurring on a specific site, check both consoles for `[NetGuardian]`
+  logs or `ng-*` error strings (`http-403`, `not-an-image`, `image-too-large`, etc.)
+  before assuming the model itself is at fault.
 
-## 🔬 How the Scanner Works — Under the Hood
+## Notes / limitations
 
-```
-Page loads in Chrome
-       │
-       ▼
-scan.ts initializes (content script)
-       │
-       ├── Queries all <img>, <video>, [role="img"], <iframe>
-       │
-       ├── For each <img>:
-       │     └── runTfjsNsfwModel(el) → NSFW score [0.0–1.0]
-       │           ├── score > 0.85 (adult mode) → blur(18px) + overlay
-       │           └── score > 0.40 (child mode)  → clear src + blur
-       │
-       ├── For each <video>:
-       │     ├── adult mode → blur(18px) overlay
-       │     └── child mode → pause + remove src + replace with block message
-       │
-       ├── For each <iframe>:
-       │     └── URL matched against ["porn","nsfw","xxx","adult","sex","hentai","cams","nude"]
-       │           ├── adult mode → blur overlay
-       │           └── child mode → iframe removed from DOM entirely
-       │
-       ├── MutationObserver watches for dynamic DOM additions
-       ├── popstate / hashchange events trigger re-scan (SPA support)
-       └── setInterval(rescanDynamicContent, 3000) — safety net
-```
-
-**Child Mode Override:**
-```typescript
-// Global override — no video plays in child mode, period.
-HTMLMediaElement.prototype.play = function (...args) {
-  this.pause();
-  this.src = "";
-  // Replace element with "Blocked by NetGuardian" message
-  return Promise.reject("Blocked by NetGuardian");
-};
-```
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| **Extension Core** | TypeScript + Webpack 5 | Browser extension logic |
-| **In-Browser AI** | TensorFlow.js 4.x | Client-side NSFW scoring |
-| **UI Framework** | React 18 | Popup, options, overlays |
-| **Dashboard** | React + Vite + TailwindCSS | Parent control panel |
-| **Data Viz** | Chart.js + react-chartjs-2 | Activity analytics |
-| **Backend API** | FastAPI + Uvicorn | REST API server |
-| **Auth** | JWT (HS256) + bcrypt | Secure session management |
-| **ORM** | SQLAlchemy | Database abstraction |
-| **Database** | SQLite (dev) / PostgreSQL (prod) | Activity & user storage |
-| **AI Insights** | OpenAI GPT-3.5-turbo | Natural language summaries |
-| **Containerization** | Docker (Python 3.12-slim) | Portable deployment |
-
----
-
-## 🗺️ Roadmap
-
-- [x] Real-time image NSFW detection with TensorFlow.js
-- [x] Child / Adult dual-mode protection levels
-- [x] Dynamic DOM scanning with MutationObserver
-- [x] SPA-aware re-scanning (popstate, hashchange, setInterval)
-- [x] FastAPI backend with classify, deepfake, reports, and AI endpoints
-- [x] JWT + bcrypt authentication system
-- [x] Parent dashboard with reports and activity charts
-- [ ] Integrate a trained deepfake detection model (replace stub)
-- [ ] Add user feedback & manual reporting from popup
-- [ ] Firefox and Edge browser support
-- [ ] Cloud deployment guide (Railway / Render / AWS)
-- [ ] Push notifications for parents (unsafe activity alerts)
-- [ ] Allowlist / Blocklist management for custom domains
-
----
-
-## 🤝 Contributing
-
-Contributions are what make open source great. Here's how to get involved:
-
-1. **Fork** the repository
-2. **Create** your feature branch: `git checkout -b feat/amazing-feature`
-3. **Commit** your changes: `git commit -m 'feat: add amazing feature'`
-4. **Push** to the branch: `git push origin feat/amazing-feature`
-5. **Open a Pull Request** — we'll review it within 48 hours
-
-Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. See `LICENSE` for more information.
-
----
-
-<p align="center">
-  <sub>Built with 💙 by <a href="https://github.com/Parvez-Sharief95">ParvezSharief</a> and contributors</sub><br/>
-  <sub>⭐ Star this repo if NetGuardian made the web a little safer for someone you love.</sub>
-</p>
+- `nsfwjs` runs a general-purpose classifier; treat its output as a heuristic
+  signal, not a guarantee. False positives/negatives happen, especially at the
+  default threshold.
+- The text-flagging term list is intentionally small and conservative to avoid
+  false positives against unrelated words. Expand `FLAGGED_TERMS` in
+  `content/content.js` if you need broader coverage.
+- Requesting `host_permissions: ["<all_urls>"]` is what makes cross-origin image
+  scanning possible, but it's also the most sensitive permission an extension can
+  ask for — be prepared to justify it during Chrome Web Store review.
