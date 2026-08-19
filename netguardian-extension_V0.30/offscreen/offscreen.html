@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8" /><title>NetGuardian offscreen worker</title></head>
+<body>
+  <!--
+    This page is never shown to the user. It exists solely so classification code
+    runs in an extension-owned document instead of inside a content script — content
+    scripts inherit the host page's CSP, and many sites (e.g. Google Search) set a
+    worker-src/script-src policy that blocks chrome-extension:// workers outright.
+    Offscreen documents are governed by the extension's own CSP instead, so this
+    works everywhere.
+  -->
+  <script src="../content/libs/nsfwjs.min.js"></script>
+  <script src="offscreen.js"></script>
+</body>
+</html>
